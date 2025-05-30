@@ -1,5 +1,5 @@
 # IAM Role for Lambda Execution
-resource "aws_iam_role" "lambda_exec" {
+resource "aws_iam_role" "lambda_execution" {
   name               = "${var.environment}-db-alerts-lambda-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,7 +18,7 @@ resource "aws_iam_role" "lambda_exec" {
 
 # Basic Lambda Execution Policy (CloudWatch Logs)
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  role       = aws_iam_role.lambda_exec.name
+  role       = aws_iam_role.lambda_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 

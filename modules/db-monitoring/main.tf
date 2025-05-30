@@ -115,3 +115,30 @@ resource "aws_cloudwatch_metric_alarm" "deadlocks" {
   })
   
 }
+
+#____________________storage alarms____________________
+
+resource "aws_cloudwatch_metric_alarm" "free_storage" {
+  for_each            = toset(var.db_identifiers)
+  alarm_name          = "${var.alarm_name_prefix}-storage-${each.value}"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 5
+  metric_name         = "FreeStorageSpace"
+  namespace           = "AWS/RDS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = var.free_storage_threshold  # In bytes (e.g., 5368709120 for 5GB)
+  alarm_description   = "Database storage below ${var.free_storage_threshold / 1073741824}GB for 5 minutes"
+  alarm_actions       = [aws_sns_topic.db_alarms.arn]
+  # ok_actions        = [aws_sns_topic.db_alarms.arn]
+
+  dimensions = {
+    DBInstanceIdentifier = var.is_cluster ? null : each.value
+    DBClusterIdentifier  = var.is_cluster ? each.value : null
+  }
+
+  tags = merge(var.tags, {
+    Metric   = "FreeStorage"
+    Database = each.value
+  })
+}

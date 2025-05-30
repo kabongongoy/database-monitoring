@@ -23,6 +23,7 @@ module "db_monitoring" {
   cpu_threshold     = var.cpu_threshold
   memory_threshold  = var.memory_threshold
   latency_threshold = var.latency_threshold
+  free_storage_threshold = var.free_storage_threshold
 
   # Slack Configuration
   slack_webhook_url = var.slack_webhook_url

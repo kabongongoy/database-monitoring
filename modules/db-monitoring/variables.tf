@@ -53,3 +53,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "free_storage_threshold" {
+  type        = number
+  default     = 10368709120  # 5 GB in bytes
+  description = "Threshold for free storage in bytes"
+}

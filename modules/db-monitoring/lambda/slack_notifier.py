@@ -1,90 +1,148 @@
 # import os
 # import json
 # import urllib3
-# from datetime import datetime
-# import pytz  # For Australia timezone
+# from datetime import datetime, timezone, timedelta
 
 # http = urllib3.PoolManager()
 
+# def format_bytes(size):
+#     """Convert bytes to human-readable format"""
+#     for unit in ['B', 'KB', 'MB', 'GB']:
+#         if size < 1024.0:
+#             return f"{size:.1f} {unit}"
+#         size /= 1024.0
+#     return f"{size:.1f} TB"
+
+# def get_australia_time():
+#     """Get current Australia time with DST handling"""
+#     now = datetime.now(timezone.utc)
+#     is_dst = now.month in [10, 11, 12, 1, 2, 3]  # Oct-Mar is DST
+#     return now + timedelta(hours=11 if is_dst else 10)
+
 # def lambda_handler(event, context):
-#     # Get configuration from environment variables
 #     webhook_url = os.environ["SLACK_WEBHOOK_URL"]
 #     slack_channel = os.environ["SLACK_CHANNEL"]
-#     environment = os.environ.get("ENVIRONMENT", "unknown")
-    
-#     # Parse the CloudWatch alarm
-#     sns_message = json.loads(event["Records"][0]["Sns"]["Message"])
-    
-#     # Australia timezone (auto-adjusts for DST)
-#     australia_tz = pytz.timezone('Australia/Sydney')
-#     timestamp = datetime.now(australia_tz).strftime("%Y-%m-%d %H:%M %Z")
-    
-#     # Format alarm details
-#     alarm_name = format_alarm_name(sns_message["AlarmName"])
-#     alarm_description = sns_message.get("AlarmDescription", "Database monitoring alert")
-#     new_state = sns_message["NewStateValue"]
-#     reason = sns_message["NewStateReason"]
-    
-#     # Determine alert color and icon
-#     color, emoji = {
-#         "ALARM": ("#FF0000", ":red_circle:"),
-#         "OK": ("#36A64F", ":large_green_circle:"),
-#         "INSUFFICIENT_DATA": ("#FFA500", ":warning:")
-#     }.get(new_state, ("#764FA5", ":question:"))
-    
-#     # Build Slack message
-#     slack_payload = {
+#     environment = os.environ.get("ENVIRONMENT", "support")
+
+#     sns_message = json.loads(event['Records'][0]['Sns']['Message'])
+#     alarm_name = sns_message.get('AlarmName', 'UnknownAlarm')
+#     alarm_desc = sns_message.get('AlarmDescription', 'Database alert')
+#     new_state = sns_message.get('NewStateValue', 'UNKNOWN')
+#     reason = sns_message.get('NewStateReason', '')
+
+#     # Extract trigger info for metric and DB identifier
+#     trigger = sns_message.get("Trigger", {})
+#     metric_name = trigger.get("MetricName", "UnknownMetric")
+#     dimensions = trigger.get("Dimensions", [])
+#     db_identifier = "unknown"
+#     for d in dimensions:
+#         if d.get("name") in ["DBInstanceIdentifier", "DBClusterIdentifier"]:
+#             db_identifier = d.get("value")
+#             break
+
+#     # Parse values safely
+#     try:
+#         value = float(reason.split('datapoint(s) (')[1].split(')')[0])
+#         threshold = float(reason.split('threshold (')[1].split(')')[0])
+#     except Exception:
+#         value = None
+#         threshold = None
+
+#     aus_time = get_australia_time()
+
+#     # Build message based on metric
+#     if metric_name == "FreeableMemory" and value is not None and threshold is not None:
+#         formatted_value = format_bytes(value)
+#         formatted_threshold = format_bytes(threshold)
+#         title = f"🚨 LOW MEMORY - {db_identifier}"
+#         details = f"""• Memory: {formatted_value}
+# • Threshold: {formatted_threshold}
+# • Database: {db_identifier}"""
+
+#     elif metric_name == "FreeStorageSpace" and value is not None and threshold is not None:
+#         formatted_value = format_bytes(value)
+#         formatted_threshold = format_bytes(threshold)
+#         title = f"🚨 LOW STORAGE - {db_identifier}"
+#         details = f"""• Storage: {formatted_value}
+# • Threshold: {formatted_threshold}
+# • Database: {db_identifier}"""
+
+#     elif metric_name == "CPUUtilization" and value is not None and threshold is not None:
+#         title = f"🚨 HIGH CPU - {db_identifier}"
+#         details = f"""• CPU: {value:.1f}%
+# • Threshold: {threshold}%
+# • Database: {db_identifier}"""
+
+#     elif metric_name == "Deadlocks" and value is not None and threshold is not None:
+#         title = f"🚨 DEADLOCKS DETECTED - {db_identifier}"
+#         details = f"""• Deadlocks: {value:.1f}
+# • Threshold: {threshold}
+# • Database: {db_identifier}"""
+
+#     elif metric_name == "Latency" and value is not None and threshold is not None:
+#         title = f"🚨 HIGH LATENCY - {db_identifier}"
+#         details = f"""• Latency: {value:.2f} ms
+# • Threshold: {threshold} ms
+# • Database: {db_identifier}"""
+
+#     else:
+#         # Fallback for unknown metrics or parse errors
+#         title = f"⚠️ ALERT - {metric_name} - {db_identifier}"
+#         if value is not None and threshold is not None:
+#             details = f"""• Value: {value}
+# • Threshold: {threshold}
+# • Database: {db_identifier}"""
+#         else:
+#             details = f"""• Unable to parse metric values.
+# • Database: {db_identifier}"""
+
+#     slack_msg = {
 #         "channel": slack_channel,
-#         "username": "AWS Database Monitor",
-#         "icon_emoji": ":aws:",
+#         "username": f"AWS {environment} Alert",
+#         "icon_emoji": ":warning:",
 #         "attachments": [{
-#             "color": color,
-#             "title": f"{emoji} {alarm_name} - {new_state}",
-#             "text": f"*{alarm_description}*",
+#             "color": "#FF0000" if new_state == "ALARM" else "#36A64F",
+#             "title": title,
+#             "text": alarm_desc,
 #             "fields": [
-#                 {"title": "Environment", "value": environment, "short": True},
-#                 {"title": "Status", "value": new_state, "short": True},
-#                 {"title": "Time (AEST/AEDT)", "value": timestamp, "short": True},
 #                 {
-#                     "title": "Details", 
-#                     "value": f"```{reason}```",  # Removed Jira link
+#                     "title": "Details",
+#                     "value": details,
 #                     "short": False
+#                 },
+#                 {
+#                     "title": "Environment",
+#                     "value": environment,
+#                     "short": True
+#                 },
+#                 {
+#                     "title": "Local Time",
+#                     "value": aus_time.strftime("%a, %d %b %Y %H:%M %Z"),
+#                     "short": True
 #                 }
 #             ],
-#             "footer": "Investigation path: CloudWatch → RDS Metrics",
-#             "ts": datetime.now(australia_tz).timestamp()
+#             "footer": "Investigate in CloudWatch → Alarms",
+#             "ts": int(aus_time.timestamp())
 #         }]
 #     }
-    
-#     # Send to Slack
+
 #     try:
 #         response = http.request(
 #             "POST",
 #             webhook_url,
-#             body=json.dumps(slack_payload),
+#             body=json.dumps(slack_msg),
 #             headers={"Content-Type": "application/json"}
 #         )
 #         if response.status != 200:
-#             raise Exception(f"Slack API error: {response.data.decode('utf-8')}")
+#             print(f"Slack API error: {response.data.decode('utf-8')}")
 #     except Exception as e:
 #         print(f"Error sending to Slack: {str(e)}")
 #         raise
 
 #     return {"statusCode": 200}
 
-# def format_alarm_name(raw_name):
-#     """Convert alarm names to human-readable format"""
-#     return (raw_name
-#             .replace("_", " ")
-#             .replace("-", " ")
-#             .title()
-#             .replace("Cpu", "CPU")
-#             .replace("Db", "DB")
-#             .replace("Rds", "RDS"))
+#___________________
 
-
-
-#----------------------
 
 import os
 import json
@@ -93,86 +151,132 @@ from datetime import datetime, timezone, timedelta
 
 http = urllib3.PoolManager()
 
+def format_bytes(size):
+    """Convert bytes to human-readable format"""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+def get_australia_time():
+    """Get current Australia time with DST handling"""
+    now = datetime.now(timezone.utc)
+    is_dst = now.month in [10, 11, 12, 1, 2, 3]  # Oct-Mar is DST
+    return now + timedelta(hours=11 if is_dst else 10)
+
 def lambda_handler(event, context):
-    # Get configuration from environment variables
     webhook_url = os.environ["SLACK_WEBHOOK_URL"]
     slack_channel = os.environ["SLACK_CHANNEL"]
     environment = os.environ.get("ENVIRONMENT", "unknown")
-    
-    # Parse the CloudWatch alarm
-    sns_message = json.loads(event["Records"][0]["Sns"]["Message"])
-    
-    # Calculate Australia time (AEST = UTC+10, AEDT = UTC+11)
-    australia_offset = 11 if is_daylight_saving() else 10
-    aus_time = datetime.now(timezone.utc) + timedelta(hours=australia_offset)
-    timestamp = aus_time.strftime("%Y-%m-%d %H:%M (AEST/AEDT)")
-    
-    # Format alarm details
-    alarm_name = format_alarm_name(sns_message["AlarmName"])
-    alarm_description = sns_message.get("AlarmDescription", "Database alert")
-    new_state = sns_message["NewStateValue"]
-    reason = sns_message["NewStateReason"]
-    
-    # Determine alert color and icon
-    if new_state == "ALARM":
-        color = "#FF0000"  # Red
-        emoji = ":red_circle:"
-    elif new_state == "OK":
-        color = "#36A64F"  # Green
-        emoji = ":large_green_circle:"
-    else:  # INSUFFICIENT_DATA
-        color = "#FFA500"  # Orange
-        emoji = ":warning:"
-    
-    # Build Slack message
-    slack_payload = {
+
+    sns_message = json.loads(event['Records'][0]['Sns']['Message'])
+    alarm_name = sns_message.get('AlarmName', 'UnknownAlarm')
+    alarm_desc = sns_message.get('AlarmDescription', 'Database alert')
+    new_state = sns_message.get('NewStateValue', 'UNKNOWN')
+    trigger = sns_message.get("Trigger", {})
+
+    metric_name = trigger.get("MetricName", "UnknownMetric")
+    value = trigger.get("MetricValue")
+    threshold = trigger.get("Threshold")
+
+    # Extract DB identifier
+    dimensions = trigger.get("Dimensions", [])
+    db_identifier = "unknown"
+    for d in dimensions:
+        if d.get("name") in ["DBInstanceIdentifier", "DBClusterIdentifier"]:
+            db_identifier = d.get("value")
+            break
+
+    aus_time = get_australia_time()
+
+    # Format alert details
+    if metric_name == "FreeableMemory" and value is not None and threshold is not None:
+        formatted_value = format_bytes(value)
+        formatted_threshold = format_bytes(threshold)
+        title = f"🚨 LOW MEMORY - {db_identifier}"
+        details = f"""• Memory: {formatted_value}
+• Threshold: {formatted_threshold}
+• Database: {db_identifier}"""
+
+    elif metric_name == "FreeStorageSpace" and value is not None and threshold is not None:
+        formatted_value = format_bytes(value)
+        formatted_threshold = format_bytes(threshold)
+        title = f"🚨 LOW STORAGE - {db_identifier}"
+        details = f"""• Storage: {formatted_value}
+• Threshold: {formatted_threshold}
+• Database: {db_identifier}"""
+
+    elif metric_name == "CPUUtilization" and value is not None and threshold is not None:
+        title = f"🚨 HIGH CPU - {db_identifier}"
+        details = f"""• CPU: {value:.1f}%
+• Threshold: {threshold}%
+• Database: {db_identifier}"""
+
+    elif metric_name == "Deadlocks" and value is not None and threshold is not None:
+        title = f"🚨 DEADLOCKS DETECTED - {db_identifier}"
+        details = f"""• Deadlocks: {value:.1f}
+• Threshold: {threshold}
+• Database: {db_identifier}"""
+
+    elif metric_name == "Latency" and value is not None and threshold is not None:
+        title = f"🚨 HIGH LATENCY - {db_identifier}"
+        details = f"""• Latency: {value:.2f} ms
+• Threshold: {threshold} ms
+• Database: {db_identifier}"""
+
+    else:
+        # Fallback for unknown metrics or missing values
+        title = f"⚠️ ALERT - {metric_name} - {db_identifier}"
+        if value is not None and threshold is not None:
+            details = f"""• Value: {value}
+• Threshold: {threshold}
+• Database: {db_identifier}"""
+        else:
+            details = f"""• Unable to parse metric values.
+• Database: {db_identifier}"""
+
+    slack_msg = {
         "channel": slack_channel,
-        "username": "AWS Database Monitor",
-        "icon_emoji": ":aws:",
+        "username": f"AWS {environment} Alert",
+        "icon_emoji": ":warning:",
         "attachments": [{
-            "color": color,
-            "title": f"{emoji} {alarm_name} - {new_state}",
-            "text": f"*{alarm_description}*",
+            "color": "#FF0000" if new_state == "ALARM" else "#36A64F",
+            "title": title,
+            "text": alarm_desc,
             "fields": [
-                {"title": "Environment", "value": environment, "short": True},
-                {"title": "Status", "value": new_state, "short": True},
-                {"title": "Time", "value": timestamp, "short": True},
-                {"title": "Details", "value": f"```{reason}```", "short": False}
+                {
+                    "title": "Details",
+                    "value": details,
+                    "short": False
+                },
+                {
+                    "title": "Environment",
+                    "value": environment,
+                    "short": True
+                },
+                {
+                    "title": "Local Time",
+                    "value": aus_time.strftime("%a, %d %b %Y %H:%M %Z"),
+                    "short": True
+                }
             ],
-            "footer": "Investigation: CloudWatch → RDS Metrics",
-            "ts": aus_time.timestamp()
+            "footer": "Investigate in CloudWatch → Alarms",
+            "ts": int(aus_time.timestamp())
         }]
     }
-    
-    # Send to Slack
+
     try:
         response = http.request(
             "POST",
             webhook_url,
-            body=json.dumps(slack_payload),
+            body=json.dumps(slack_msg),
             headers={"Content-Type": "application/json"}
         )
         if response.status != 200:
-            raise Exception(f"Slack API error: {response.data.decode('utf-8')}")
+            print(f"Slack API error: {response.data.decode('utf-8')}")
     except Exception as e:
         print(f"Error sending to Slack: {str(e)}")
         raise
 
     return {"statusCode": 200}
-
-def is_daylight_saving():
-    """Check if daylight saving is active in Australia (first Sun Oct to first Sun Apr)"""
-    now = datetime.now(timezone.utc)
-    year = now.year
-    # DST starts first Sunday in October
-    october = datetime(year, 10, 1, tzinfo=timezone.utc)
-    dst_start = october + timedelta(days=(6 - october.weekday()) % 7)
-    # DST ends first Sunday in April
-    april = datetime(year, 4, 1, tzinfo=timezone.utc)
-    dst_end = april + timedelta(days=(6 - april.weekday()) % 7)
-    return dst_start <= now < dst_end
-
-def format_alarm_name(raw_name):
-    """Convert alarm names to human-readable format"""
-    name = raw_name.replace("_", " ").replace("-", " ").title()
-    return name.replace("Cpu", "CPU").replace("Db", "DB").replace("Rds", "RDS")
