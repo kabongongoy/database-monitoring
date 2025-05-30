@@ -1,7 +1,9 @@
+#____________________ SNS  Topic____________________
 resource "aws_sns_topic" "db_alarms" {
   name = "${var.alarm_name_prefix}-alerts-${var.environment}"
   tags = var.tags
 }
+#____________________ SNS  subscription____________________
 
 resource "aws_sns_topic_subscription" "lambda" {
   topic_arn = aws_sns_topic.db_alarms.arn
@@ -9,7 +11,7 @@ resource "aws_sns_topic_subscription" "lambda" {
   endpoint  = aws_lambda_function.slack_notifier.arn
 }
 
-# CPU Alarms for all databases
+#____________________CPU alarms____________________
 resource "aws_cloudwatch_metric_alarm" "cpu" {
   for_each            = toset(var.db_identifiers)
   alarm_name          = "${var.alarm_name_prefix}-cpu-${each.value}"
@@ -34,8 +36,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu" {
     Database = each.value
   })
 }
-
-# Memory Alarms for all databases
+#____________________Memory alarms____________________
 resource "aws_cloudwatch_metric_alarm" "memory" {
   for_each            = toset(var.db_identifiers)
   alarm_name          = "${var.alarm_name_prefix}-memory-${each.value}"
@@ -62,9 +63,7 @@ resource "aws_cloudwatch_metric_alarm" "memory" {
 }
 
 
-
-
-# Latency Alarms for all databases
+#____________________Latency alarms____________________
 resource "aws_cloudwatch_metric_alarm" "latency" {
   for_each            = toset(var.db_identifiers)
   alarm_name          = "${var.alarm_name_prefix}-latency-${each.value}"
@@ -90,6 +89,8 @@ resource "aws_cloudwatch_metric_alarm" "latency" {
   })
 }
 
+
+#____________________deadlocks alarms____________________
 resource "aws_cloudwatch_metric_alarm" "deadlocks" {
   for_each            = toset(var.db_identifiers)
   alarm_name          = "${var.alarm_name_prefix}-deadlocks-${each.value}"
