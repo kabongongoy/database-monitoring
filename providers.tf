@@ -8,6 +8,28 @@ terraform {
 }
 
 
+provider "aws" {
+  region = "ap-southeast-2"
+  
+  default_tags {
+    tags = {
+      Service     = "RDS"
+      Project     = "Database-Monitoring"
+      Environment = "dev"
+      Department  = "Technology"
+      Team        = "DevOps"
+      Country     = "Australia"
+      TICKET      = "SCAL-2890"
+      Terraform_Module_Path = "modules/rds"
+      TF_Module  = "rds-monitoring"
+      TF_Module_Repo_URL = "url"
+      Managed_By = "Terraform"
+    }
+  }
+}
+
+
+
 # terraform {
 #   required_version = ">= 1.0.0"
 
