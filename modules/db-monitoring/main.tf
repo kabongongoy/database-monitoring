@@ -1,6 +1,6 @@
 #____________________ SNS  Topic____________________
 resource "aws_sns_topic" "db_alarms" {
-  name = "${var.alarm_name_prefix}-alerts-${var.environment}"
+  name = "${var.alarm_name_prefix}-${var.environment}"
   tags = var.tags
 }
 #____________________ SNS  subscription____________________
