@@ -18,23 +18,25 @@ resource "aws_lambda_function" "slack_notifier" {
     variables = {
       SLACK_WEBHOOK_URL = var.slack_webhook_url
       SLACK_CHANNEL     = var.slack_channel
-      ENVIRONMENT       = var.environment
+      ACCOUNT_NAME      = var.account_name
     }
   }
+  tags = var.tags
 }
+
 
 # resource "aws_lambda_function" "db_alerts" {
 #   function_name = "${var.environment}-db-alerts"
 #   role          = aws_iam_role.lambda_execution.arn
 #   handler       = "index.lambda_handler"
 #   runtime       = "python3.11"
-#   filename      = "path/to/your/zip/file.zip"
+#   filename      = "path/to/db-alerts.zip"
 
 #   environment {
 #     variables = {
 #       SLACK_WEBHOOK_URL = var.slack_webhook_url
 #       SLACK_CHANNEL     = var.slack_channel
-#       ENVIRONMENT       = var.environment  # <--- Set it explicitly
+#       ACCOUNT_NAME      = var.account_name  # 👈 Pass this explicitly
 #     }
 #   }
 

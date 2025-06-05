@@ -2,11 +2,11 @@
 # import json
 # import urllib3
 # from datetime import datetime, timezone, timedelta
+# import boto3
 
 # http = urllib3.PoolManager()
 
 # def format_bytes(size):
-#     """Convert bytes to human-readable format"""
 #     for unit in ['B', 'KB', 'MB', 'GB']:
 #         if size < 1024.0:
 #             return f"{size:.1f} {unit}"
@@ -14,15 +14,30 @@
 #     return f"{size:.1f} TB"
 
 # def get_australia_time():
-#     """Get current Australia time with DST handling"""
 #     now = datetime.now(timezone.utc)
-#     is_dst = now.month in [10, 11, 12, 1, 2, 3]  # Oct-Mar is DST
+#     is_dst = now.month in [10, 11, 12, 1, 2, 3]
 #     return now + timedelta(hours=11 if is_dst else 10)
+
+# def get_account_info():
+#     sts = boto3.client("sts")
+#     account_id = sts.get_caller_identity()["Account"]
+
+#     try:
+#         iam = boto3.client("iam")
+#         alias_response = iam.list_account_aliases()
+#         account_alias = alias_response["AccountAliases"][0] if alias_response["AccountAliases"] else account_id
+#     except Exception:
+#         account_alias = account_id
+
+#     return account_id, account_alias
+
+# def build_cloudwatch_url(region, alarm_name):
+#     return f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#alarmsV2:alarm/{alarm_name}"
 
 # def lambda_handler(event, context):
 #     webhook_url = os.environ["SLACK_WEBHOOK_URL"]
 #     slack_channel = os.environ["SLACK_CHANNEL"]
-#     environment = os.environ.get("ENVIRONMENT", "unknown")
+#     environment = os.environ.get("ENVIRONMENT", "cns-support")
 
 #     sns_message = json.loads(event['Records'][0]['Sns']['Message'])
 #     alarm_name = sns_message.get('AlarmName', 'UnknownAlarm')
@@ -30,11 +45,12 @@
 #     new_state = sns_message.get('NewStateValue', 'UNKNOWN')
 #     trigger = sns_message.get("Trigger", {})
 
+#     region = sns_message.get("Region", os.environ.get("AWS_REGION", "us-east-1"))
+
 #     metric_name = trigger.get("MetricName", "UnknownMetric")
 #     value = trigger.get("MetricValue")
 #     threshold = trigger.get("Threshold")
 
-#     # Extract DB identifier
 #     dimensions = trigger.get("Dimensions", [])
 #     db_identifier = "unknown"
 #     for d in dimensions:
@@ -43,8 +59,9 @@
 #             break
 
 #     aus_time = get_australia_time()
+#     account_id, account_alias = get_account_info()
+#     alarm_url = build_cloudwatch_url(region, alarm_name)
 
-#     # Emoji and color per metric type
 #     metric_meta = {
 #         "FreeableMemory": {"emoji": "🧠", "color": "#ff9900"},
 #         "FreeStorageSpace": {"emoji": "💾", "color": "#cc0000"},
@@ -56,7 +73,6 @@
 #     emoji = meta["emoji"]
 #     color = meta["color"]
 
-#     # Format alert details
 #     if metric_name == "FreeableMemory" and value is not None and threshold is not None:
 #         formatted_value = format_bytes(value)
 #         formatted_threshold = format_bytes(threshold)
@@ -107,6 +123,7 @@
 #         "attachments": [{
 #             "color": color if new_state == "ALARM" else "#36A64F",
 #             "title": title,
+#             "title_link": alarm_url,
 #             "text": alarm_desc,
 #             "fields": [
 #                 {
@@ -117,6 +134,11 @@
 #                 {
 #                     "title": "Environment",
 #                     "value": environment,
+#                     "short": True
+#                 },
+#                 {
+#                     "title": "Account",
+#                     "value": account_alias,
 #                     "short": True
 #                 },
 #                 {
@@ -145,8 +167,6 @@
 
 #     return {"statusCode": 200}
 
-
-
 import os
 import json
 import urllib3
@@ -156,6 +176,7 @@ import boto3
 http = urllib3.PoolManager()
 
 def format_bytes(size):
+    """Convert bytes to human-readable format"""
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size < 1024.0:
             return f"{size:.1f} {unit}"
@@ -163,38 +184,30 @@ def format_bytes(size):
     return f"{size:.1f} TB"
 
 def get_australia_time():
+    """Get current Australia time with DST handling"""
     now = datetime.now(timezone.utc)
-    is_dst = now.month in [10, 11, 12, 1, 2, 3]
+    is_dst = now.month in [10, 11, 12, 1, 2, 3]  # Oct-Mar is DST
     return now + timedelta(hours=11 if is_dst else 10)
 
-def get_account_info():
-    sts = boto3.client("sts")
-    account_id = sts.get_caller_identity()["Account"]
-
+def get_account_id():
+    """Fallback to account ID if alias not passed"""
     try:
-        iam = boto3.client("iam")
-        alias_response = iam.list_account_aliases()
-        account_alias = alias_response["AccountAliases"][0] if alias_response["AccountAliases"] else account_id
-    except Exception:
-        account_alias = account_id
-
-    return account_id, account_alias
-
-def build_cloudwatch_url(region, alarm_name):
-    return f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#alarmsV2:alarm/{alarm_name}"
+        sts = boto3.client("sts")
+        return sts.get_caller_identity()["Account"]
+    except Exception as e:
+        print(f"Error getting account ID: {str(e)}")
+        return "unknown-account"
 
 def lambda_handler(event, context):
     webhook_url = os.environ["SLACK_WEBHOOK_URL"]
     slack_channel = os.environ["SLACK_CHANNEL"]
-    environment = os.environ.get("ENVIRONMENT", "cns-support")
+    account_name = os.environ.get("ACCOUNT_NAME", get_account_id())
 
     sns_message = json.loads(event['Records'][0]['Sns']['Message'])
     alarm_name = sns_message.get('AlarmName', 'UnknownAlarm')
     alarm_desc = sns_message.get('AlarmDescription', 'Database alert')
     new_state = sns_message.get('NewStateValue', 'UNKNOWN')
     trigger = sns_message.get("Trigger", {})
-
-    region = sns_message.get("Region", os.environ.get("AWS_REGION", "us-east-1"))
 
     metric_name = trigger.get("MetricName", "UnknownMetric")
     value = trigger.get("MetricValue")
@@ -208,8 +221,6 @@ def lambda_handler(event, context):
             break
 
     aus_time = get_australia_time()
-    account_id, account_alias = get_account_info()
-    alarm_url = build_cloudwatch_url(region, alarm_name)
 
     metric_meta = {
         "FreeableMemory": {"emoji": "🧠", "color": "#ff9900"},
@@ -267,12 +278,11 @@ def lambda_handler(event, context):
 
     slack_msg = {
         "channel": slack_channel,
-        "username": f"AWS {environment} Alert",
+        "username": f"AWS {account_name} Alert",
         "icon_emoji": ":warning:",
         "attachments": [{
             "color": color if new_state == "ALARM" else "#36A64F",
             "title": title,
-            "title_link": alarm_url,
             "text": alarm_desc,
             "fields": [
                 {
@@ -281,13 +291,8 @@ def lambda_handler(event, context):
                     "short": False
                 },
                 {
-                    "title": "Environment",
-                    "value": environment,
-                    "short": True
-                },
-                {
                     "title": "Account",
-                    "value": account_alias,
+                    "value": account_name,
                     "short": True
                 },
                 {

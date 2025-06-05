@@ -59,3 +59,9 @@ variable "free_storage_threshold" {
   default     = 10368709120  # 5 GB in bytes
   description = "Threshold for free storage in bytes"
 }
+
+variable "account_name" {
+  description = "Name of the AWS account where the RDS instances are located"
+  type        = string
+}
+
